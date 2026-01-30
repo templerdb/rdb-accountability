@@ -1,20 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>ROTC Accountability</title>
   <style>
-    body { font-family: Arial; margin: 20px; }
-    .cadet { margin-bottom: 14px; }
-    button { margin-right: 6px; }
-    button.active {
-      background: #222;
-      color: white;
-      font-weight: bold;
-    }
-    input[disabled] {
-      background: #eee;
-    }
+    body { font-family: Arial, system-ui; margin: 20px; }
+    .row { padding: 10px 0; border-bottom: 1px solid #eee; }
+    .name { font-weight: 700; margin-bottom: 6px; }
+    .btns button { margin-right: 6px; padding: 8px 10px; border: 1px solid #bbb; border-radius: 10px; background: white; cursor: pointer; }
+    .btns button.active { background: #222; color: #fff; border-color: #222; font-weight: 800; }
+    input { margin-top: 8px; padding: 8px 10px; width: min(520px, 95%); border: 1px solid #bbb; border-radius: 10px; }
+    input:disabled { background: #f1f1f1; color: #777; }
+    .actions { margin-top: 14px; }
+    .actions button { padding: 10px 12px; border-radius: 10px; border: 1px solid #bbb; background: white; cursor: pointer; margin-right: 10px; }
+    pre { margin-top: 14px; padding: 12px; border: 1px solid #ddd; border-radius: 10px; background: #fafafa; white-space: pre-wrap; }
   </style>
 </head>
 <body>
@@ -32,159 +32,171 @@
 <label>Platoon:</label>
 <select id="platoonSelect"></select>
 
-<hr>
+<div class="actions">
+  <button id="startBtn">Start Session (TEMP)</button>
+  <button id="submitBtn">Submit Accountability</button>
+</div>
 
 <div id="roster"></div>
 
-<br>
-
-<button onclick="startSession()">Start Session (TEMP)</button>
-<button onclick="submitAttendance()">Submit Accountability</button>
-
-<pre id="output"></pre>
+<pre id="output">Ready.</pre>
 
 <script src="roster.js"></script>
 <script src="app.js"></script>
 
 <script>
-const state = { entries: {} };
+  // Requires:
+  // - roster.js defines PLATOONS
+  // - app.js defines SCRIPT_URL
 
-// ================= START SESSION =================
-async function startSession() {
-  const sessionType = document.getElementById("sessionType").value;
-  const platoon = document.getElementById("platoonSelect").value;
-
-  const res = await fetch(SCRIPT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "START_SESSION",
-      key: "starter-pt-93KfQ2", // must match backend
-      sessionType,
-      platoon,
-      startedBy: "Tester"
-    })
-  });
-
-  const data = await res.json();
-  document.getElementById("output").textContent =
-    JSON.stringify(data, null, 2);
-}
-
-// ================= LOAD PLATOONS =================
-function loadPlatoons() {
-  const sel = document.getElementById("platoonSelect");
-  sel.innerHTML = "";
-
-  Object.keys(PLATOONS).forEach(p => {
-    const opt = document.createElement("option");
-    opt.value = p;
-    opt.textContent = p;
-    sel.appendChild(opt);
-  });
-
-  sel.onchange = loadRoster;
-  loadRoster();
-}
-
-// ================= LOAD ROSTER =================
-function loadRoster() {
-  const platoon = document.getElementById("platoonSelect").value;
+  const output = document.getElementById("output");
+  const platoonSelect = document.getElementById("platoonSelect");
+  const sessionTypeSel = document.getElementById("sessionType");
   const rosterDiv = document.getElementById("roster");
-  rosterDiv.innerHTML = "";
+  const startBtn = document.getElementById("startBtn");
+  const submitBtn = document.getElementById("submitBtn");
 
-  // preserve existing state if already loaded
-  if (!state.entries) state.entries = {};
-  if (!state.entries[platoon]) {
-    state.entries[platoon] = {};
-    PLATOONS[platoon].forEach(name => {
-      state.entries[platoon][name] = { status: "", reason: "" };
+  // state[platoon][name] = { status, reason }
+  const state = {};
+
+  function log(obj) {
+    output.textContent = (typeof obj === "string") ? obj : JSON.stringify(obj, null, 2);
+  }
+
+  function ensurePlatoonState(platoon) {
+    if (!state[platoon]) state[platoon] = {};
+    for (const name of PLATOONS[platoon]) {
+      if (!state[platoon][name]) state[platoon][name] = { status: "", reason: "" };
+    }
+  }
+
+  function renderPlatoons() {
+    platoonSelect.innerHTML = "";
+    for (const p of Object.keys(PLATOONS)) {
+      const opt = document.createElement("option");
+      opt.value = p;
+      opt.textContent = p;
+      platoonSelect.appendChild(opt);
+    }
+  }
+
+  function renderRoster() {
+    const platoon = platoonSelect.value;
+    ensurePlatoonState(platoon);
+
+    rosterDiv.innerHTML = "";
+
+    for (const name of PLATOONS[platoon]) {
+      const entry = state[platoon][name];
+
+      const row = document.createElement("div");
+      row.className = "row";
+
+      const nameDiv = document.createElement("div");
+      nameDiv.className = "name";
+      nameDiv.textContent = name;
+
+      const btns = document.createElement("div");
+      btns.className = "btns";
+
+      function makeBtn(label, status) {
+        const b = document.createElement("button");
+        b.textContent = label;
+        if (entry.status === status) b.classList.add("active");
+        b.addEventListener("click", () => {
+          entry.status = status;
+          if (status !== "EXCUSED") entry.reason = "";
+          renderRoster(); // re-render so active class + disabled input updates
+        });
+        return b;
+      }
+
+      btns.appendChild(makeBtn("Present", "PRESENT"));
+      btns.appendChild(makeBtn("Excused", "EXCUSED"));
+      btns.appendChild(makeBtn("Absent", "ABSENT"));
+
+      const reason = document.createElement("input");
+      reason.placeholder = "Reason (required if excused)";
+      reason.value = entry.reason;
+      reason.disabled = entry.status !== "EXCUSED";
+      reason.addEventListener("input", (ev) => {
+        entry.reason = ev.target.value;
+      });
+
+      row.appendChild(nameDiv);
+      row.appendChild(btns);
+      row.appendChild(reason);
+
+      rosterDiv.appendChild(row);
+    }
+  }
+
+  async function startSession() {
+    const platoon = platoonSelect.value;
+    const sessionType = sessionTypeSel.value;
+
+    const res = await fetch(SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "START_SESSION",
+        key: "starter-pt-93KfQ2", // must match backend STARTER_KEYS
+        sessionType,
+        platoon,
+        startedBy: "Tester"
+      })
     });
+
+    const data = await res.json();
+    log(data);
+    if (!data.ok) alert("Start session failed: " + (data.error || "unknown error"));
   }
 
-  PLATOONS[platoon].forEach(name => {
-    const entry = state.entries[platoon][name];
+  async function submitAttendance() {
+    const platoon = platoonSelect.value;
+    const sessionType = sessionTypeSel.value;
 
-    const div = document.createElement("div");
-    div.className = "cadet";
+    ensurePlatoonState(platoon);
 
-    div.innerHTML = `
-      <b>${name}</b><br>
-      <button class="${entry.status === 'PRESENT' ? 'active' : ''}"
-              onclick="setStatus('${name}','PRESENT')">Present</button>
+    const entries = PLATOONS[platoon].map(name => ({
+      name,
+      status: state[platoon][name].status,
+      reason: state[platoon][name].reason || ""
+    }));
 
-      <button class="${entry.status === 'EXCUSED' ? 'active' : ''}"
-              onclick="setStatus('${name}','EXCUSED')">Excused</button>
-
-      <button class="${entry.status === 'ABSENT' ? 'active' : ''}"
-              onclick="setStatus('${name}','ABSENT')">Absent</button>
-
-      <br>
-      <input placeholder="Reason (required if excused)"
-             value="${entry.reason}"
-             ${entry.status !== 'EXCUSED' ? 'disabled' : ''}
-             oninput="state.entries['${platoon}']['${name}'].reason=this.value">
-    `;
-
-    rosterDiv.appendChild(div);
-  });
-}
-
-// ================= SET STATUS =================
-function setStatus(name, status) {
-  const platoon = document.getElementById("platoonSelect").value;
-  state.entries[platoon][name].status = status;
-
-  // Clear reason if not excused
-  if (status !== "EXCUSED") {
-    state.entries[platoon][name].reason = "";
-  }
-
-  loadRoster(); // re-render UI to reflect change
-}
-
-// ================= SUBMIT =================
-async function submitAttendance() {
-  const sessionType = document.getElementById("sessionType").value;
-  const platoon = document.getElementById("platoonSelect").value;
-
-  const entries = Object.entries(state.entries[platoon]).map(([name, data]) => ({
-    name,
-    status: data.status,
-    reason: data.reason
-  }));
-
-  for (const e of entries) {
-    if (!e.status) {
-      alert("Missing status for someone");
-      return;
+    for (const e of entries) {
+      if (!e.status) { alert("Missing status for: " + e.name); return; }
+      if (e.status === "EXCUSED" && !e.reason.trim()) { alert("Excused requires reason for: " + e.name); return; }
     }
-    if (e.status === "EXCUSED" && !e.reason) {
-      alert("Excused requires a reason");
-      return;
-    }
+
+    const res = await fetch(SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "SUBMIT_ATTENDANCE",
+        sessionType,
+        platoon,
+        entries
+      })
+    });
+
+    const data = await res.json();
+    log(data);
+    if (!data.ok) alert("Submit failed: " + (data.error || "unknown error"));
   }
 
-  const res = await fetch(SCRIPT_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      action: "SUBMIT_ATTENDANCE",
-      sessionType,
-      platoon,
-      entries
-    })
-  });
+  // Wire up handlers
+  platoonSelect.addEventListener("change", renderRoster);
+  startBtn.addEventListener("click", startSession);
+  submitBtn.addEventListener("click", submitAttendance);
 
-  const data = await res.json();
-  document.getElementById("output").textContent =
-    JSON.stringify(data, null, 2);
-}
-
-// ================= INIT =================
-loadPlatoons();
+  // Init
+  renderPlatoons();
+  renderRoster();
+  log("Ready. Start session, mark statuses, then submit.");
 </script>
 
 </body>
 </html>
+
 
