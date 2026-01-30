@@ -27,6 +27,9 @@
 <div id="roster"></div>
 
 <br>
+<button onclick="startSession()">Start Session (TEMP)</button>
+  
+<br>
 <button onclick="submitAttendance()">Submit Accountability</button>
 
 <pre id="output"></pre>
@@ -35,6 +38,28 @@
 <script src="app.js"></script>
 <script>
 const state = {};
+
+async function startSession() {
+  const sessionType = document.getElementById("sessionType").value;
+  const platoon = document.getElementById("platoonSelect").value;
+
+  const res = await fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "START_SESSION",
+      key: "starter-pt-93KfQ2", // SAME key as backend
+      sessionType,
+      platoon,
+      startedBy: "Tester"
+    })
+  });
+
+  const data = await res.json();
+  document.getElementById("output").textContent =
+    JSON.stringify(data, null, 2);
+}
+
 
 function loadPlatoons() {
   const sel = document.getElementById("platoonSelect");
