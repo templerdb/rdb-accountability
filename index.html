@@ -3,27 +3,118 @@
 <head>
   <meta charset="utf-8">
   <title>ROTC Accountability</title>
+  <style>
+    body { font-family: Arial; margin: 20px; }
+    .cadet { margin-bottom: 10px; }
+    button.active { font-weight: bold; }
+  </style>
 </head>
 <body>
-  <h1>ROTC Accountability</h1>
 
-  <label>Session Type:</label>
-  <select id="sessionType">
-    <option value="PT">PT</option>
-    <option value="LAB">LAB</option>
-  </select>
+<h1>ROTC Accountability</h1>
 
-  <br><br>
+<label>Session:</label>
+<select id="sessionType">
+  <option value="PT">PT</option>
+  <option value="LAB">LAB</option>
+</select>
 
-  <label>Platoon:</label>
-  <input id="platoon" placeholder="e.g. 1st Platoon">
+<br><br>
 
-  <br><br>
+<label>Platoon:</label>
+<select id="platoonSelect"></select>
 
-  <button onclick="checkStatus()">Check Status</button>
+<div id="roster"></div>
 
-  <pre id="output"></pre>
+<br>
+<button onclick="submitAttendance()">Submit Accountability</button>
 
-  <script src="app.js"></script>
+<pre id="output"></pre>
+
+<script src="roster.js"></script>
+<script src="app.js"></script>
+<script>
+const state = {};
+
+function loadPlatoons() {
+  const sel = document.getElementById("platoonSelect");
+  Object.keys(PLATOONS).forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p;
+    opt.textContent = p;
+    sel.appendChild(opt);
+  });
+  sel.onchange = loadRoster;
+  loadRoster();
+}
+
+function loadRoster() {
+  const platoon = platoonSelect.value;
+  const rosterDiv = document.getElementById("roster");
+  rosterDiv.innerHTML = "";
+  state.entries = {};
+
+  PLATOONS[platoon].forEach(name => {
+    state.entries[name] = { status: "", reason: "" };
+
+    const div = document.createElement("div");
+    div.className = "cadet";
+
+    div.innerHTML = `
+      <b>${name}</b><br>
+      <button onclick="setStatus('${name}','PRESENT')">Present</button>
+      <button onclick="setStatus('${name}','EXCUSED')">Excused</button>
+      <button onclick="setStatus('${name}','ABSENT')">Absent</button>
+      <input placeholder="Reason (if excused)"
+             oninput="state.entries['${name}'].reason=this.value">
+    `;
+    rosterDiv.appendChild(div);
+  });
+}
+
+function setStatus(name, status) {
+  state.entries[name].status = status;
+}
+
+async function submitAttendance() {
+  const sessionType = document.getElementById("sessionType").value;
+  const platoon = document.getElementById("platoonSelect").value;
+
+  const entries = Object.entries(state.entries).map(([name, data]) => ({
+    name,
+    status: data.status,
+    reason: data.reason
+  }));
+
+  for (const e of entries) {
+    if (!e.status) {
+      alert("Missing status for someone");
+      return;
+    }
+    if (e.status === "EXCUSED" && !e.reason) {
+      alert("Excused needs reason");
+      return;
+    }
+  }
+
+  const res = await fetch(SCRIPT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "SUBMIT_ATTENDANCE",
+      sessionType,
+      platoon,
+      entries
+    })
+  });
+
+  const data = await res.json();
+  document.getElementById("output").textContent =
+    JSON.stringify(data, null, 2);
+}
+
+loadPlatoons();
+</script>
 </body>
 </html>
+
