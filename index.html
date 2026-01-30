@@ -5,8 +5,16 @@
   <title>ROTC Accountability</title>
   <style>
     body { font-family: Arial; margin: 20px; }
-    .cadet { margin-bottom: 10px; }
-    button.active { font-weight: bold; }
+    .cadet { margin-bottom: 14px; }
+    button { margin-right: 6px; }
+    button.active {
+      background: #222;
+      color: white;
+      font-weight: bold;
+    }
+    input[disabled] {
+      background: #eee;
+    }
   </style>
 </head>
 <body>
@@ -24,21 +32,24 @@
 <label>Platoon:</label>
 <select id="platoonSelect"></select>
 
+<hr>
+
 <div id="roster"></div>
 
 <br>
+
 <button onclick="startSession()">Start Session (TEMP)</button>
-  
-<br>
 <button onclick="submitAttendance()">Submit Accountability</button>
 
 <pre id="output"></pre>
 
 <script src="roster.js"></script>
 <script src="app.js"></script>
-<script>
-const state = {};
 
+<script>
+const state = { entries: {} };
+
+// ================= START SESSION =================
 async function startSession() {
   const sessionType = document.getElementById("sessionType").value;
   const platoon = document.getElementById("platoonSelect").value;
@@ -48,7 +59,7 @@ async function startSession() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       action: "START_SESSION",
-      key: "starter-pt-93KfQ2", // SAME key as backend
+      key: "starter-pt-93KfQ2", // must match backend
       sessionType,
       platoon,
       startedBy: "Tester"
@@ -60,52 +71,84 @@ async function startSession() {
     JSON.stringify(data, null, 2);
 }
 
-
+// ================= LOAD PLATOONS =================
 function loadPlatoons() {
   const sel = document.getElementById("platoonSelect");
+  sel.innerHTML = "";
+
   Object.keys(PLATOONS).forEach(p => {
     const opt = document.createElement("option");
     opt.value = p;
     opt.textContent = p;
     sel.appendChild(opt);
   });
+
   sel.onchange = loadRoster;
   loadRoster();
 }
 
+// ================= LOAD ROSTER =================
 function loadRoster() {
-  const platoon = platoonSelect.value;
+  const platoon = document.getElementById("platoonSelect").value;
   const rosterDiv = document.getElementById("roster");
   rosterDiv.innerHTML = "";
-  state.entries = {};
+
+  // preserve existing state if already loaded
+  if (!state.entries) state.entries = {};
+  if (!state.entries[platoon]) {
+    state.entries[platoon] = {};
+    PLATOONS[platoon].forEach(name => {
+      state.entries[platoon][name] = { status: "", reason: "" };
+    });
+  }
 
   PLATOONS[platoon].forEach(name => {
-    state.entries[name] = { status: "", reason: "" };
+    const entry = state.entries[platoon][name];
 
     const div = document.createElement("div");
     div.className = "cadet";
 
     div.innerHTML = `
       <b>${name}</b><br>
-      <button onclick="setStatus('${name}','PRESENT')">Present</button>
-      <button onclick="setStatus('${name}','EXCUSED')">Excused</button>
-      <button onclick="setStatus('${name}','ABSENT')">Absent</button>
-      <input placeholder="Reason (if excused)"
-             oninput="state.entries['${name}'].reason=this.value">
+      <button class="${entry.status === 'PRESENT' ? 'active' : ''}"
+              onclick="setStatus('${name}','PRESENT')">Present</button>
+
+      <button class="${entry.status === 'EXCUSED' ? 'active' : ''}"
+              onclick="setStatus('${name}','EXCUSED')">Excused</button>
+
+      <button class="${entry.status === 'ABSENT' ? 'active' : ''}"
+              onclick="setStatus('${name}','ABSENT')">Absent</button>
+
+      <br>
+      <input placeholder="Reason (required if excused)"
+             value="${entry.reason}"
+             ${entry.status !== 'EXCUSED' ? 'disabled' : ''}
+             oninput="state.entries['${platoon}']['${name}'].reason=this.value">
     `;
+
     rosterDiv.appendChild(div);
   });
 }
 
+// ================= SET STATUS =================
 function setStatus(name, status) {
-  state.entries[name].status = status;
+  const platoon = document.getElementById("platoonSelect").value;
+  state.entries[platoon][name].status = status;
+
+  // Clear reason if not excused
+  if (status !== "EXCUSED") {
+    state.entries[platoon][name].reason = "";
+  }
+
+  loadRoster(); // re-render UI to reflect change
 }
 
+// ================= SUBMIT =================
 async function submitAttendance() {
   const sessionType = document.getElementById("sessionType").value;
   const platoon = document.getElementById("platoonSelect").value;
 
-  const entries = Object.entries(state.entries).map(([name, data]) => ({
+  const entries = Object.entries(state.entries[platoon]).map(([name, data]) => ({
     name,
     status: data.status,
     reason: data.reason
@@ -117,7 +160,7 @@ async function submitAttendance() {
       return;
     }
     if (e.status === "EXCUSED" && !e.reason) {
-      alert("Excused needs reason");
+      alert("Excused requires a reason");
       return;
     }
   }
@@ -138,8 +181,10 @@ async function submitAttendance() {
     JSON.stringify(data, null, 2);
 }
 
+// ================= INIT =================
 loadPlatoons();
 </script>
+
 </body>
 </html>
 
